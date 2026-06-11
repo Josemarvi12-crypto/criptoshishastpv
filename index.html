@@ -19,14 +19,11 @@
           <form id="loginForm">
             <label>
               Código
-              <input id="loginPassword" type="text" placeholder="Gerente1234" required />
+              <input id="loginPassword" type="password" placeholder="Código de acceso" autocomplete="current-password" required />
             </label>
             <div id="loginError" class="login-error"></div>
             <button class="primary-btn" type="submit">Iniciar sesión</button>
           </form>
-          <div class="login-footer">
-            <p>Demo gerente: Gerente1234</p>
-          </div>
         </div>
       </div>
     </div>
@@ -62,6 +59,7 @@
 
         <section class="side-panel">
           <p class="eyebrow">Sesión activa</p>
+          <p id="syncStatus" role="status">Datos locales</p>
           <label>
             Centro
             <select id="locationSelect"></select>
@@ -590,14 +588,14 @@
     </div>
 
     <!-- Firebase Scripts -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
     
     <!-- Firebase Service -->
-    <script src="firebase-service.js"></script>
+    <script src="firebase-service.js?v=20260612a"></script>
     
     <!-- App Script -->
-    <script src="app.js?v=20260610u"></script>
+    <script src="app.js?v=20260612a"></script>
   </body>
 </html>

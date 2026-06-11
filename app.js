@@ -64,6 +64,11 @@ const defaults = {
   },
 };
 
+let authEventsBound = false;
+let appEventsBound = false;
+let firebaseSyncReady = false;
+let firebaseUnsubscribers = [];
+let firebaseSyncTimer = null;
 let state = loadState();
 ensureStateIntegrity();
 let currentUser = loadSession();
@@ -73,48 +78,139 @@ let selectedHookahs = [];
 let selectedVapers = [];
 let productType = PRODUCT.hookah;
 let quickPaymentMethod = "";
-let authEventsBound = false;
-let appEventsBound = false;
 
 // ===== SINCRONIZACIÓN CON FIRESTORE =====
-// Sincronizar datos de Firestore cuando la app esté lista
 async function syncFirestoreData() {
   if (!window.FirebaseService) {
-    console.log('Firebase no disponible, usando datos locales');
+    console.warn("Firebase no disponible; se usará únicamente el almacenamiento local.");
+    setSyncStatus("Datos locales");
     return;
   }
-  
+
   try {
-    // Sincronizar órdenes desde Firestore
-    const firestoreOrders = await FirebaseService.getAllOrders();
-    if (firestoreOrders.length > 0) {
-      // Mezclar órdenes: mantener las locales nuevas, actualizar las que están en Firestore
-      const localOrderIds = state.orders.map(o => o.id);
-      const newOrders = firestoreOrders.filter(fo => !localOrderIds.includes(fo.id));
-      state.orders = [...state.orders, ...newOrders];
-      saveState();
-      console.log('✓ Órdenes sincronizadas desde Firestore');
-    }
-    
-    // Sincronizar configuración
-    const config = await FirebaseService.getConfig('app-state');
-    if (config && config.locations) {
+    setSyncStatus("Conectando...");
+    const [remoteOrders, remoteUsers, remoteTimeEntries, config] = await Promise.all([
+      FirebaseService.getAllOrders(),
+      FirebaseService.getAllUsers(),
+      FirebaseService.getAllTimeEntries(),
+      FirebaseService.getConfig("app-state"),
+    ]);
+
+    state.orders = mergeInitialCloudData(remoteOrders, state.orders);
+    state.users = normalizeUsers(mergeInitialCloudData(remoteUsers, state.users));
+    state.timeEntries = mergeInitialCloudData(remoteTimeEntries, state.timeEntries);
+
+    if (config?.locations?.length) {
       state.locations = config.locations;
-      state.locationSettings = config.locationSettings;
-      state.flavors = config.flavors;
-      state.vapers = config.vapers;
-      saveState();
-      console.log('✓ Configuración sincronizada desde Firestore');
+      state.locationSettings = config.locationSettings || state.locationSettings;
+      state.flavors = config.flavors || state.flavors;
+      state.vapers = config.vapers || state.vapers;
     }
+
+    state = normalizeState(state);
+    firebaseSyncReady = true;
+    refreshCurrentUser();
+    persistLocalState();
+    await syncCurrentStateToFirestore();
+    subscribeToFirestore();
+    setSyncStatus("Sincronizado");
+    if (currentUser) renderAll();
   } catch (error) {
-    console.log('Sincronización con Firestore no disponible (offline o sin configurar)');
+    console.error("No se pudo iniciar la sincronización con Firestore:", error);
+    setSyncStatus(error?.code === "permission-denied" ? "Firebase sin acceso" : "Datos locales");
   }
 }
 
-// Sincronizar cuando la app esté lista
-setTimeout(() => syncFirestoreData(), 2000);
-let authEventsBound = false;
-let appEventsBound = false;
+function mergeInitialCloudData(remoteData, localData) {
+  const merged = new Map();
+  (Array.isArray(localData) ? localData : []).forEach((item) => merged.set(item.id, item));
+  (Array.isArray(remoteData) ? remoteData : []).forEach((item) => merged.set(item.id, item));
+  return [...merged.values()];
+}
+
+function subscribeToFirestore() {
+  const onError = (error) => {
+    console.error("Se perdió la conexión en tiempo real con Firestore:", error);
+    setSyncStatus(error?.code === "permission-denied" ? "Firebase sin acceso" : "Sin conexión");
+  };
+  firebaseUnsubscribers.forEach((unsubscribe) => unsubscribe());
+  firebaseUnsubscribers = [
+    FirebaseService.onOrdersChanged((orders) => applyRemoteCollection("orders", orders), onError),
+    FirebaseService.onUsersChanged((users) => applyRemoteCollection("users", normalizeUsers(users)), onError),
+    FirebaseService.onTimeEntriesChanged((entries) => applyRemoteCollection("timeEntries", entries), onError),
+    FirebaseService.onConfigChanged("app-state", applyRemoteConfig, onError),
+  ];
+}
+
+function applyRemoteCollection(key, values) {
+  if (!firebaseSyncReady) return;
+  state[key] = values;
+  state = normalizeState(state);
+  refreshCurrentUser();
+  persistLocalState();
+  if (currentUser) renderAll();
+}
+
+function applyRemoteConfig(config) {
+  if (!firebaseSyncReady || !config?.locations?.length) return;
+  state.locations = config.locations;
+  state.locationSettings = config.locationSettings || state.locationSettings;
+  state.flavors = config.flavors || state.flavors;
+  state.vapers = config.vapers || state.vapers;
+  state = normalizeState(state);
+  persistLocalState();
+  if (currentUser) renderAll();
+}
+
+function refreshCurrentUser() {
+  if (!currentUser) return;
+  const remoteUser = state.users.find((user) => user.id === currentUser.id && user.active);
+  if (!remoteUser) {
+    logout();
+    return;
+  }
+  currentUser = { ...remoteUser };
+  delete currentUser.password;
+  saveSession();
+}
+
+function scheduleFirestoreSync() {
+  if (!firebaseSyncReady || !window.FirebaseService) return;
+  clearTimeout(firebaseSyncTimer);
+  firebaseSyncTimer = setTimeout(() => {
+    syncCurrentStateToFirestore().catch((error) => {
+      console.error("No se pudieron guardar los cambios en Firestore:", error);
+    });
+  }, 250);
+}
+
+async function syncCurrentStateToFirestore() {
+  const safeUsers = state.users.map(({ password, ...user }) => user);
+  const writes = [
+    ...state.orders.map((order) => FirebaseService.saveOrder(order.id, order)),
+    ...safeUsers.map((user) => FirebaseService.saveUser(user.id, user)),
+    ...state.timeEntries.map((entry) => FirebaseService.saveTimeEntry(entry.id, entry)),
+    FirebaseService.saveConfig("app-state", {
+      locations: state.locations,
+      locationSettings: state.locationSettings,
+      flavors: state.flavors,
+      vapers: state.vapers,
+      updatedAt: new Date().toISOString(),
+    }),
+  ];
+  await Promise.all(writes);
+}
+
+function deleteRemoteRecord(methodName, id) {
+  if (!firebaseSyncReady || !window.FirebaseService?.[methodName]) return;
+  FirebaseService[methodName](id).catch((error) => {
+    console.error(`No se pudo completar ${methodName} en Firestore:`, error);
+  });
+}
+
+function setSyncStatus(message) {
+  if (elements?.syncStatus) elements.syncStatus.textContent = message;
+}
 
 const elements = {
   loginScreen: document.querySelector("#loginScreen"),
@@ -124,6 +220,7 @@ const elements = {
   appShell: document.querySelector("#appShell"),
   sidebarToggle: document.querySelector("#sidebarToggle"),
   userInfo: document.querySelector("#userInfo"),
+  syncStatus: document.querySelector("#syncStatus"),
   currentUserName: document.querySelector("#currentUserName"),
   currentUserRole: document.querySelector("#currentUserRole"),
   logoutBtn: document.querySelector("#logoutBtn"),
@@ -257,6 +354,13 @@ const elements = {
 };
 
 init();
+
+if (window.FirebaseService) {
+  FirebaseService.onAuthStateChanged((firebaseUser) => {
+    if (firebaseUser && !firebaseSyncReady) syncFirestoreData();
+    if (!firebaseUser && !firebaseSyncReady) setSyncStatus("Firebase sin autenticar");
+  });
+}
 
 function init() {
   if (!currentUser) {
@@ -458,7 +562,7 @@ function renderUserManagement() {
         <span class="role-badge ${user.role}">${escapeHtml(getRoleLabel(user.role))}</span>
       </td>
       <td data-label="Perfil">
-        <select data-user-role="${user.id}" ${user.id === currentUser.id ? "disabled" : ""}>
+        <select data-user-role="${escapeHtml(user.id)}" ${user.id === currentUser.id ? "disabled" : ""}>
           <option value="employee" ${user.role === ROLES.employee ? "selected" : ""}>Empleado</option>
           <option value="manager" ${user.role === ROLES.manager ? "selected" : ""}>Gerente</option>
         </select>
@@ -469,8 +573,8 @@ function renderUserManagement() {
         ${
           user.id === currentUser.id
             ? `<span class="empty-hint">Sesión actual</span>`
-            : `<button class="inline-action" type="button" data-toggle-user="${user.id}">${user.active ? "Desactivar" : "Activar"}</button>
-               <button class="delete-sale" type="button" data-delete-user="${user.id}">Borrar</button>`
+            : `<button class="inline-action" type="button" data-toggle-user="${escapeHtml(user.id)}">${user.active ? "Desactivar" : "Activar"}</button>
+               <button class="delete-sale" type="button" data-delete-user="${escapeHtml(user.id)}">Borrar</button>`
         }
       </td>
     </tr>
@@ -514,6 +618,7 @@ function deleteUser(userId) {
   if (!isManager() || userId === currentUser.id) return;
   if (!confirm("Seguro que quieres eliminar este usuario?")) return;
   state.users = state.users.filter((user) => user.id !== userId);
+  deleteRemoteRecord("deleteUser", userId);
   saveState();
   renderUserManagement();
 }
@@ -686,20 +791,30 @@ function normalizeState(nextState) {
   normalized.locationSettings = buildLocationSettings(normalized.locations, normalized.locationSettings);
   normalized.orders = normalized.orders.map((order) => ({
     ...order,
-    productType: order.productType || PRODUCT.hookah,
+    id: String(order.id || crypto.randomUUID()),
+    createdAt: normalizeDateValue(order.createdAt, new Date().toISOString()),
+    paidAt: normalizeDateValue(order.paidAt),
+    productType: order.productType === PRODUCT.vape ? PRODUCT.vape : PRODUCT.hookah,
     productName: order.productName || "",
     quantity: Math.max(Number(order.quantity || 1), 1),
     hookahs: getOrderHookahItems(order),
     vapeItems: getOrderVapeItems(order),
     flavors: getOrderFlavorItems(order),
     commission: Number(order.commission || 0),
+    status: order.status === STATUS.paid ? STATUS.paid : STATUS.preparation,
+    paymentMethod:
+      order.paymentMethod === PAYMENT.card
+        ? PAYMENT.card
+        : order.paymentMethod === PAYMENT.cash
+          ? PAYMENT.cash
+          : null,
   }));
   normalized.timeEntries = normalized.timeEntries.map((entry) => ({
     id: entry.id || crypto.randomUUID(),
     seller: entry.seller || "",
     location: entry.location || "",
-    clockInAt: entry.clockInAt,
-    clockOutAt: entry.clockOutAt || null,
+    clockInAt: normalizeDateValue(entry.clockInAt, new Date().toISOString()),
+    clockOutAt: normalizeDateValue(entry.clockOutAt),
     manualDurationMinutes: Number(entry.manualDurationMinutes || 0),
     note: entry.note || "",
     source: entry.source || "clock",
@@ -711,6 +826,18 @@ function normalizeState(nextState) {
     stock: Math.max(Number(vaper.stock || 0), 0),
   }));
   return normalized;
+}
+
+function normalizeDateValue(value, fallback = null) {
+  if (!value) return fallback;
+  if (typeof value === "string") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? fallback : date.toISOString();
+  }
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value.toDate === "function") return value.toDate().toISOString();
+  if (typeof value.seconds === "number") return new Date(value.seconds * 1000).toISOString();
+  return fallback;
 }
 
 function normalizeRole(role) {
@@ -746,30 +873,13 @@ function normalizeUsers(users = []) {
   return validUsers;
 }
 
-function saveState() {
-  // Guardar en localStorage (local)
+function persistLocalState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  
-  // Guardar en Firestore (nube) de forma asincrónica
-  if (window.FirebaseService) {
-    // Guardar órdenes
-    state.orders.forEach(order => {
-      FirebaseService.saveOrder(order.id, order).catch(err => {
-        console.log('No se pudo guardar orden en Firebase (sin conexión):', err);
-      });
-    });
-    
-    // Guardar configuración
-    FirebaseService.saveConfig('app-state', {
-      locations: state.locations,
-      locationSettings: state.locationSettings,
-      flavors: state.flavors,
-      vapers: state.vapers,
-      lastSync: new Date().toISOString()
-    }).catch(err => {
-      console.log('No se pudo guardar config en Firebase (sin conexión):', err);
-    });
-  }
+}
+
+function saveState() {
+  persistLocalState();
+  scheduleFirestoreSync();
 }
 
 function renderAll() {
@@ -1361,10 +1471,10 @@ function renderPreparingCard(order) {
       <small>Comisión: ${formatMoney(order.commission)}</small>
       ${order.notes ? `<small>${escapeHtml(order.notes)}</small>` : ""}
       <div class="order-actions">
-        <button class="pay-cash" type="button" data-order-id="${order.id}" data-pay="${PAYMENT.cash}">Efectivo</button>
-        <button class="pay-card" type="button" data-order-id="${order.id}" data-pay="${PAYMENT.card}">Tarjeta</button>
-        <button class="ghost-btn" type="button" data-order-id="${order.id}" data-edit-order>Editar</button>
-        <button class="ghost-btn" type="button" data-order-id="${order.id}" data-delete>Borrar</button>
+        <button class="pay-cash" type="button" data-order-id="${escapeHtml(order.id)}" data-pay="${PAYMENT.cash}">Efectivo</button>
+        <button class="pay-card" type="button" data-order-id="${escapeHtml(order.id)}" data-pay="${PAYMENT.card}">Tarjeta</button>
+        <button class="ghost-btn" type="button" data-order-id="${escapeHtml(order.id)}" data-edit-order>Editar</button>
+        <button class="ghost-btn" type="button" data-order-id="${escapeHtml(order.id)}" data-delete>Borrar</button>
       </div>
     </article>
   `;
@@ -1383,7 +1493,7 @@ function renderPaidCard(order) {
       ${renderOrderItemLines(order)}
       ${isVapeOrder(order) ? "" : `<small>Comisión: ${formatMoney(order.commission)}</small>`}
       <div class="order-actions paid-actions">
-        <button class="ghost-btn" type="button" data-order-id="${order.id}" data-edit-order>Editar</button>
+        <button class="ghost-btn" type="button" data-order-id="${escapeHtml(order.id)}" data-edit-order>Editar</button>
       </div>
     </article>
   `;
@@ -1503,8 +1613,8 @@ function renderHistory() {
         <td>${formatMoney(order.price)}</td>
         <td>${formatMoney(order.commission)}</td>
         <td class="table-actions">
-          <button class="inline-action" type="button" data-order-id="${order.id}" data-edit-order>Editar</button>
-          <button class="delete-sale" type="button" data-order-id="${order.id}">Borrar</button>
+          <button class="inline-action" type="button" data-order-id="${escapeHtml(order.id)}" data-edit-order>Editar</button>
+          <button class="delete-sale" type="button" data-order-id="${escapeHtml(order.id)}">Borrar</button>
         </td>
       </tr>
     `,
@@ -1565,6 +1675,7 @@ function deleteOrder(id) {
   }
 
   state.orders = state.orders.filter((item) => item.id !== id);
+  deleteRemoteRecord("deleteOrder", id);
   saveState();
   renderAll();
 }
@@ -1781,6 +1892,7 @@ function deleteTimeEntry(entryId) {
   if (!isManager()) return;
   if (!confirm("Seguro que quieres eliminar esta sesión de fichaje?")) return;
   state.timeEntries = state.timeEntries.filter((entry) => entry.id !== entryId);
+  deleteRemoteRecord("deleteTimeEntry", entryId);
   saveState();
   renderAll();
 }
@@ -2714,8 +2826,13 @@ function removeListItem(key, value) {
 }
 
 function clearOrders() {
-  if (!confirm("Seguro que quieres borrar todos los pedidos guardados en este navegador?")) return;
+  if (!confirm("Seguro que quieres borrar todos los pedidos guardados en todos los dispositivos?")) return;
   state.orders = [];
+  if (firebaseSyncReady && window.FirebaseService) {
+    FirebaseService.deleteAllOrders().catch((error) => {
+      console.error("No se pudieron borrar todos los pedidos de Firestore:", error);
+    });
+  }
   saveState();
   renderAll();
 }

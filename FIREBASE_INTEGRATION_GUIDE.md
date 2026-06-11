@@ -1,153 +1,44 @@
-# 📖 Guía de Integración de Firebase
+# Firebase: estado y puesta en producción
 
-## Cambios necesarios en app.js
+## Estado actual
 
-Tu aplicación actual usa `localStorage` para guardar datos. Para sincronizar con Firebase, necesitas hacer estos cambios:
+La aplicación ya incluye:
 
-### 1. Reemplazar `loadState()` (localStorage)
+- SDK Firebase Compat 10.7.0 cargado correctamente.
+- Persistencia separada de `orders`, `users`, `timeEntries` y `config`.
+- Escuchas `onSnapshot` para actualización en tiempo real.
+- Caché local en `localStorage`.
+- Migración inicial que mezcla datos locales no subidos con los documentos remotos.
+- Borrado remoto de pedidos, usuarios y fichajes.
 
-**ANTES:**
-```javascript
-function loadState() {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  return stored ? JSON.parse(stored) : { ...defaults };
-}
-```
+La sincronización solo se inicia cuando existe una sesión válida de Firebase Auth.
 
-**AHORA:**
-```javascript
-async function loadState() {
-  // Cargar desde Firestore
-  const users = await FirebaseService.getAllUsers();
-  const orders = await FirebaseService.getAllOrders();
-  
-  if (users.length > 0 || orders.length > 0) {
-    // Si hay datos en Firestore, usarlos
-    return {
-      ...defaults,
-      users: users,
-      orders: orders
-    };
-  }
-  
-  // Si no hay datos, usar defaults
-  return { ...defaults };
-}
-```
+## Bloqueo detectado el 11 de junio de 2026
 
-### 2. Reemplazar `saveState()` (localStorage)
+- Firestore rechaza las peticiones sin autenticar con HTTP 403.
+- La cuenta de ejemplo `manager@demo.com` documentada anteriormente no inicia sesión.
+- El login por código de la interfaz es un control local y no equivale a Firebase Auth.
 
-**ANTES:**
-```javascript
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-```
+No abras Firestore con reglas `allow read, write: if true`. Eso expondría pedidos,
+usuarios, códigos de acceso y fichajes.
 
-**AHORA:**
-```javascript
-async function saveState() {
-  // Guardar en Firestore
-  for (const user of state.users) {
-    await FirebaseService.saveUser(user.id, user);
-  }
-  for (const order of state.orders) {
-    await FirebaseService.saveOrder(order.id, order);
-  }
-  // También guardar en localStorage como caché local
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-```
+## Configuración necesaria
 
-### 3. Cambiar el login para usar Firebase Auth
+1. Activa un proveedor en Firebase Authentication.
+2. Crea cuentas reales para las personas que usarán el TPV.
+3. Sustituye el login local por Firebase Auth y vincula cada perfil con `auth.uid`.
+4. Publica reglas de Firestore que comprueben `request.auth.uid` y el rol del perfil.
+5. Elimina los usuarios y códigos de demostración de `defaults` después de migrar los
+   datos existentes.
+6. Prueba con dos navegadores: crear, cobrar, editar y borrar un pedido; abrir y cerrar
+   un fichaje; modificar stock; perder y recuperar la conexión.
 
-**IMPORTANTE:** Primero debes crear usuarios en Firebase:
+## Modelo recomendado
 
-1. Ve a https://console.firebase.google.com
-2. Selecciona tu proyecto `criptoshishastpv`
-3. Ve a **Authentication** → **Users**
-4. Crea estos usuarios con email/contraseña:
-   - **Email:** manager@demo.com | **Contraseña:** manager123
-   - **Email:** vendedor@demo.com | **Contraseña:** vendedor123
+- `users/{uid}`: nombre, rol, activo y centros permitidos. Nunca contraseñas.
+- `orders/{orderId}`: pedido completo y `createdByUid`.
+- `timeEntries/{entryId}`: fichaje y `userId`.
+- `config/app-state`: centros, catálogo y ajustes no sensibles.
 
-### 4. Actualizar el formulario de login
-
-**Actualmente tu app usa un código (Gerente1234), cambia a:**
-
-```javascript
-const loginForm = document.querySelector("#loginForm");
-const emailInput = document.querySelector("#loginEmail"); // Cambia el input a email
-const passwordInput = document.querySelector("#loginPassword"); // Usa para password
-
-loginForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  
-  const email = emailInput.value;
-  const password = passwordInput.value;
-  
-  const result = await FirebaseService.loginWithEmail(email, password);
-  
-  if (result.success) {
-    // Login exitoso
-    currentUser = result.user;
-    showAppShell();
-  } else {
-    // Mostrar error
-    document.querySelector("#loginError").textContent = result.error;
-  }
-});
-```
-
-### 5. Sincronización en tiempo real (OPCIONAL pero RECOMENDADO)
-
-Para que los datos se actualicen instantáneamente en todos los navegadores:
-
-```javascript
-// Al iniciar la app, suscribirse a cambios
-FirebaseService.onOrdersChanged((orders) => {
-  state.orders = orders;
-  // Volver a renderizar la UI
-  renderOrders();
-});
-
-FirebaseService.onUsersChanged((users) => {
-  state.users = users;
-  // Volver a renderizar usuarios
-  renderUsers();
-});
-```
-
-## Pasos rápidos de implementación:
-
-1. **Crear usuarios en Firebase** (ver paso 4 arriba)
-2. **Copiar la función loadState() actualizada**
-3. **Copiar la función saveState() actualizada**
-4. **Actualizar el login form HTML** (cambiar de código a email/password)
-5. **Actualizar el event listener del login**
-6. **Agregar listeners en tiempo real** (opcional)
-
-## Probar la app:
-
-```bash
-node servidor.js
-# Luego ve a http://localhost:5000
-```
-
-Inicia sesión con:
-- **Email:** manager@demo.com
-- **Contraseña:** manager123
-
-## Preguntas frecuentes:
-
-**P: ¿Se perderán los datos?**
-A: No, si hay datos en localStorage, puedes migrarlos a Firestore con `FirebaseService.syncLocalStorageToFirestore()`
-
-**P: ¿Funciona sin internet?**
-A: Sí, localStorage servirá como caché. Firestore sincronizará cuando haya conexión.
-
-**P: ¿Es seguro compartir las credenciales de Firebase?**
-A: Sí, las de la web (apiKey, authDomain, etc.) son públicas. Las que NO debes compartir son las de admin.
-
----
-
-¿Necesitas ayuda implementando estos cambios?
+La creación de usuarios y la asignación del rol de gerente deben hacerse con Firebase
+Admin SDK en una función o API protegida, no desde JavaScript público del navegador.

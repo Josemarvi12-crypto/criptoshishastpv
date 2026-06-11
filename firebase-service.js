@@ -1,5 +1,4 @@
-// Firebase Service - Maneja toda la lógica de Firestore y Authentication
-
+// Firestore persistence used by the browser application.
 const firebaseConfig = {
   apiKey: "AIzaSyC8Debbv3hvkedn15E98gSfiUSH2955ouA",
   authDomain: "criptoshishastpv.firebaseapp.com",
@@ -7,17 +6,14 @@ const firebaseConfig = {
   storageBucket: "criptoshishastpv.firebasestorage.app",
   messagingSenderId: "963607058818",
   appId: "1:963607058818:web:b8f09049bf4554ee92179b",
-  measurementId: "G-KC1WSD664M"
+  measurementId: "G-KC1WSD664M",
 };
 
-// Inicializar Firebase
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 
 class FirebaseService {
-  // ===== AUTENTICACIÓN =====
-  
   static async loginWithEmail(email, password) {
     try {
       const result = await auth.signInWithEmailAndPassword(email, password);
@@ -44,143 +40,117 @@ class FirebaseService {
     return auth.onAuthStateChanged(callback);
   }
 
-  // ===== USUARIOS =====
-  
-  static async saveUser(userId, userData) {
-    try {
-      await db.collection('users').doc(userId).set(userData, { merge: true });
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+  static async saveDocument(collectionName, id, data) {
+    await db.collection(collectionName).doc(id).set(data);
+    return { success: true, id };
   }
 
-  static async getUser(userId) {
-    try {
-      const doc = await db.collection('users').doc(userId).get();
-      return doc.exists ? doc.data() : null;
-    } catch (error) {
-      console.error('Error al obtener usuario:', error);
-      return null;
-    }
+  static async deleteDocument(collectionName, id) {
+    await db.collection(collectionName).doc(id).delete();
+    return { success: true };
   }
 
-  static async getAllUsers() {
-    try {
-      const snapshot = await db.collection('users').get();
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    } catch (error) {
-      console.error('Error al obtener usuarios:', error);
-      return [];
-    }
+  static async getCollection(collectionName) {
+    const snapshot = await db.collection(collectionName).get();
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   }
 
-  // ===== ÓRDENES =====
-  
-  static async saveOrder(orderId, orderData) {
-    try {
-      await db.collection('orders').doc(orderId).set(orderData);
-      return { success: true, id: orderId };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+  static onCollectionChanged(collectionName, callback, onError) {
+    return db.collection(collectionName).onSnapshot(
+      (snapshot) => {
+        callback(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+      },
+      onError,
+    );
   }
 
-  static async getOrder(orderId) {
-    try {
-      const doc = await db.collection('orders').doc(orderId).get();
-      return doc.exists ? doc.data() : null;
-    } catch (error) {
-      console.error('Error al obtener orden:', error);
-      return null;
-    }
+  static saveUser(userId, userData) {
+    return this.saveDocument("users", userId, userData);
   }
 
-  static async getAllOrders() {
-    try {
-      const snapshot = await db.collection('orders').get();
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    } catch (error) {
-      console.error('Error al obtener órdenes:', error);
-      return [];
-    }
+  static getAllUsers() {
+    return this.getCollection("users");
   }
 
-  static async getOrdersByDate(date) {
-    try {
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      const snapshot = await db.collection('orders')
-        .where('createdAt', '>=', startOfDay)
-        .where('createdAt', '<=', endOfDay)
-        .get();
-
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    } catch (error) {
-      console.error('Error al obtener órdenes por fecha:', error);
-      return [];
-    }
+  static deleteUser(userId) {
+    return this.deleteDocument("users", userId);
   }
 
-  // ===== CONFIGURACIÓN =====
-  
+  static onUsersChanged(callback, onError) {
+    return this.onCollectionChanged("users", callback, onError);
+  }
+
+  static saveOrder(orderId, orderData) {
+    return this.saveDocument("orders", orderId, orderData);
+  }
+
+  static getAllOrders() {
+    return this.getCollection("orders");
+  }
+
+  static deleteOrder(orderId) {
+    return this.deleteDocument("orders", orderId);
+  }
+
+  static onOrdersChanged(callback, onError) {
+    return this.onCollectionChanged("orders", callback, onError);
+  }
+
+  static saveTimeEntry(entryId, entryData) {
+    return this.saveDocument("timeEntries", entryId, entryData);
+  }
+
+  static getAllTimeEntries() {
+    return this.getCollection("timeEntries");
+  }
+
+  static deleteTimeEntry(entryId) {
+    return this.deleteDocument("timeEntries", entryId);
+  }
+
+  static onTimeEntriesChanged(callback, onError) {
+    return this.onCollectionChanged("timeEntries", callback, onError);
+  }
+
+  static async deleteAllOrders() {
+    const snapshot = await db.collection("orders").get();
+    if (snapshot.empty) return { success: true };
+
+    const batches = [];
+    let batch = db.batch();
+    let operationCount = 0;
+
+    snapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+      operationCount += 1;
+      if (operationCount === 450) {
+        batches.push(batch.commit());
+        batch = db.batch();
+        operationCount = 0;
+      }
+    });
+
+    if (operationCount > 0) batches.push(batch.commit());
+    await Promise.all(batches);
+    return { success: true };
+  }
+
   static async saveConfig(configName, configData) {
-    try {
-      await db.collection('config').doc(configName).set(configData, { merge: true });
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    await db.collection("config").doc(configName).set(configData, { merge: true });
+    return { success: true };
   }
 
   static async getConfig(configName) {
-    try {
-      const doc = await db.collection('config').doc(configName).get();
-      return doc.exists ? doc.data() : null;
-    } catch (error) {
-      console.error('Error al obtener configuración:', error);
-      return null;
-    }
+    const doc = await db.collection("config").doc(configName).get();
+    return doc.exists ? doc.data() : null;
   }
 
-  // ===== ESCUCHAS EN TIEMPO REAL =====
-  
-  static onOrdersChanged(callback) {
-    return db.collection('orders').onSnapshot(snapshot => {
-      const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      callback(orders);
-    });
-  }
-
-  static onUsersChanged(callback) {
-    return db.collection('users').onSnapshot(snapshot => {
-      const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      callback(users);
-    });
-  }
-
-  // ===== SINCRONIZACIÓN CON LOCALSTORAGE =====
-  
-  static async syncLocalStorageToFirestore(localStorageKey, firestoreCollection) {
-    try {
-      const localData = JSON.parse(localStorage.getItem(localStorageKey) || '{}');
-      
-      if (Object.keys(localData).length > 0) {
-        // Subir datos locales a Firestore
-        for (const [key, value] of Object.entries(localData)) {
-          await db.collection(firestoreCollection).doc(key).set(value, { merge: true });
-        }
-        return { success: true, itemsSynced: Object.keys(localData).length };
-      }
-      return { success: true, itemsSynced: 0 };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+  static onConfigChanged(configName, callback, onError) {
+    return db.collection("config").doc(configName).onSnapshot(
+      (doc) => callback(doc.exists ? doc.data() : null),
+      onError,
+    );
   }
 }
 
-// Exportar para uso en navegador
 window.FirebaseService = FirebaseService;
