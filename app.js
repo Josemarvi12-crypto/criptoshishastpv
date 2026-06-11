@@ -36,28 +36,7 @@ const defaults = {
   ],
   orders: [],
   timeEntries: [],
-  users: [
-    {
-      id: "manager-default",
-      name: "Gerente",
-      email: "manager@demo.com",
-      password: btoa("manager123"),
-      code: "Gerente1234",
-      role: ROLES.manager,
-      active: true,
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "employee-default",
-      name: "Vendedor",
-      email: "vendedor@demo.com",
-      password: btoa("vendedor123"),
-      code: "Vendedor1234",
-      role: ROLES.employee,
-      active: true,
-      createdAt: new Date().toISOString(),
-    },
-  ],
+  users: [],
   session: {
     seller: "Jose",
     location: "Local 1 - Lepe",
@@ -71,7 +50,7 @@ let firebaseUnsubscribers = [];
 let firebaseSyncTimer = null;
 let state = loadState();
 ensureStateIntegrity();
-let currentUser = loadSession();
+let currentUser = null;
 let priceMode = "recommended";
 let selectedFlavors = [];
 let selectedHookahs = [];
@@ -97,7 +76,7 @@ async function syncFirestoreData() {
     ]);
 
     state.orders = mergeInitialCloudData(remoteOrders, state.orders);
-    state.users = normalizeUsers(mergeInitialCloudData(remoteUsers, state.users));
+    state.users = normalizeUsers(remoteUsers);
     state.timeEntries = mergeInitialCloudData(remoteTimeEntries, state.timeEntries);
 
     if (config?.locations?.length) {
@@ -185,19 +164,21 @@ function scheduleFirestoreSync() {
 }
 
 async function syncCurrentStateToFirestore() {
-  const safeUsers = state.users.map(({ password, ...user }) => user);
   const writes = [
     ...state.orders.map((order) => FirebaseService.saveOrder(order.id, order)),
-    ...safeUsers.map((user) => FirebaseService.saveUser(user.id, user)),
     ...state.timeEntries.map((entry) => FirebaseService.saveTimeEntry(entry.id, entry)),
-    FirebaseService.saveConfig("app-state", {
+  ];
+
+  if (isManager()) {
+    writes.push(...state.users.map((user) => FirebaseService.saveUser(user.id, user)));
+    writes.push(FirebaseService.saveConfig("app-state", {
       locations: state.locations,
       locationSettings: state.locationSettings,
       flavors: state.flavors,
       vapers: state.vapers,
       updatedAt: new Date().toISOString(),
-    }),
-  ];
+    }));
+  }
   await Promise.all(writes);
 }
 
@@ -356,20 +337,38 @@ const elements = {
 init();
 
 if (window.FirebaseService) {
-  FirebaseService.onAuthStateChanged((firebaseUser) => {
-    if (firebaseUser && !firebaseSyncReady) syncFirestoreData();
-    if (!firebaseUser && !firebaseSyncReady) setSyncStatus("Firebase sin autenticar");
+  FirebaseService.onAuthStateChanged(async (firebaseUser) => {
+    if (!firebaseUser) {
+      currentUser = null;
+      localStorage.removeItem(SESSION_KEY);
+      showLoginScreen();
+      setSyncStatus("Sin sesión");
+      return;
+    }
+
+    try {
+      const profile = await FirebaseService.getUser(firebaseUser.uid);
+      if (!profile?.active) {
+        elements.loginError.textContent = profile ? "Usuario desactivado" : "Usuario sin perfil";
+        await FirebaseService.logout();
+        return;
+      }
+
+      currentUser = normalizeUsers([profile])[0];
+      saveSession();
+      startAuthenticatedApp();
+      if (!firebaseSyncReady) await syncFirestoreData();
+    } catch (error) {
+      console.error("No se pudo cargar el perfil del usuario:", error);
+      elements.loginError.textContent = "No se pudo conectar con la base de datos";
+      showLoginScreen();
+    }
   });
 }
 
 function init() {
-  if (!currentUser) {
-    elements.loginScreen.classList.remove("hidden");
-    elements.appShell.style.display = "none";
-    bindAuthEvents();
-  } else {
-    startAuthenticatedApp();
-  }
+  showLoginScreen();
+  bindAuthEvents();
 }
 
 function bindAuthEvents() {
@@ -378,32 +377,39 @@ function bindAuthEvents() {
   elements.loginForm.addEventListener("submit", handleLogin);
 }
 
-function handleLogin(event) {
+async function handleLogin(event) {
   event.preventDefault();
   const code = elements.loginPassword.value.trim();
   elements.loginError.textContent = "";
+  const submitButton = elements.loginForm.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  submitButton.textContent = "Conectando...";
 
-  const normalizedCode = normalizeCode(code);
-  const user = state.users.find((u) => normalizeCode(u.code) === normalizedCode && u.active);
-  if (!user) {
+  const result = await FirebaseService.loginWithCode(code);
+  if (!result.success) {
     elements.loginError.textContent = "Código incorrecto";
-    return;
+    submitButton.disabled = false;
+    submitButton.textContent = "Iniciar sesión";
   }
-
-  currentUser = { ...user };
-  delete currentUser.password;
-  saveSession();
-  elements.loginPassword.value = "";
-  startAuthenticatedApp();
 }
 
-function logout() {
+async function logout() {
+  firebaseUnsubscribers.forEach((unsubscribe) => unsubscribe());
+  firebaseUnsubscribers = [];
+  firebaseSyncReady = false;
   currentUser = null;
   localStorage.removeItem(SESSION_KEY);
+  if (window.FirebaseService) await FirebaseService.logout();
+  showLoginScreen();
+}
+
+function showLoginScreen() {
   elements.loginScreen.classList.remove("hidden");
   elements.appShell.style.display = "none";
   elements.loginPassword.value = "";
-  elements.loginError.textContent = "";
+  const submitButton = elements.loginForm.querySelector('button[type="submit"]');
+  submitButton.disabled = false;
+  submitButton.textContent = "Iniciar sesión";
   bindAuthEvents();
 }
 
@@ -520,7 +526,7 @@ function getRoleLabel(role) {
   return roleLabels[role] || role;
 }
 
-function handleCreateUser(event) {
+async function handleCreateUser(event) {
   event.preventDefault();
   if (!isManager()) return;
 
@@ -532,20 +538,32 @@ function handleCreateUser(event) {
     alert("Este nombre ya está registrado");
     return;
   }
-  const code = generateUniqueUserCode(name);
+  let code = "";
+  let accountResult = null;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    code = generateUniqueUserCode(name);
+    accountResult = await FirebaseService.createUserWithCode(code);
+    if (accountResult.success) break;
+    if (accountResult.error !== "auth/email-already-in-use") break;
+  }
 
-  state.users.push({
-    id: crypto.randomUUID(),
+  if (!accountResult?.success) {
+    console.error("No se pudo crear la cuenta Firebase:", accountResult?.error);
+    alert("No se ha podido crear el usuario online.");
+    return;
+  }
+
+  const user = {
+    id: accountResult.uid,
     name,
-    email: "",
-    password: "",
-    code,
     role,
     active: true,
     createdAt: new Date().toISOString(),
-  });
+  };
 
-  saveState();
+  await FirebaseService.saveUser(user.id, user);
+  state.users.push(user);
+  persistLocalState();
   elements.newUserName.value = "";
   elements.newUserRole.value = "employee";
   renderSettings();
@@ -567,7 +585,7 @@ function renderUserManagement() {
           <option value="manager" ${user.role === ROLES.manager ? "selected" : ""}>Gerente</option>
         </select>
       </td>
-      <td data-label="Código"><code>${escapeHtml(user.code)}</code></td>
+      <td data-label="Acceso">Código privado</td>
       <td data-label="Estado">${user.active ? "Activo" : "Inactivo"}</td>
       <td class="table-actions" data-label="Acciones">
         ${
@@ -851,24 +869,11 @@ function normalizeUsers(users = []) {
         .map((user) => ({
           id: user.id || crypto.randomUUID(),
           name: user.name || user.email,
-          email: user.email ? normalizeEmail(user.email) : "",
-          password: user.password || "",
-          code: user.code || getDefaultUserCode(user) || generateUniqueUserCode(user.name || user.email || "Usuario", users),
           role: normalizeRole(user.role),
           active: user.active !== false,
           createdAt: user.createdAt || new Date().toISOString(),
         }))
     : [];
-
-  defaults.users.forEach((defaultUser) => {
-    if (!validUsers.some((user) => normalizeName(user.name) === normalizeName(defaultUser.name))) {
-      validUsers.push({ ...defaultUser });
-    }
-  });
-
-  if (!validUsers.some((user) => user.role === ROLES.manager && user.active)) {
-    validUsers.push({ ...defaults.users[0], id: `manager-recovery-${Date.now()}` });
-  }
 
   return validUsers;
 }
@@ -3447,19 +3452,9 @@ function normalizeCode(value) {
   return String(value || "").trim().replace(/\s+/g, "").toLocaleLowerCase("es");
 }
 
-function getDefaultUserCode(user) {
-  const defaultUser = defaults.users.find(
-    (item) => normalizeEmail(item.email) === normalizeEmail(user.email) || normalizeName(item.name) === normalizeName(user.name),
-  );
-  return defaultUser?.code || "";
-}
-
 function generateUniqueUserCode(name, users = state.users) {
-  let code = "";
-  do {
-    code = `${getCodeNamePrefix(name)}${String(Math.floor(Math.random() * 10000)).padStart(4, "0")}`;
-  } while (users.some((user) => normalizeCode(user.code) === normalizeCode(code)));
-  return code;
+  const prefix = getCodeNamePrefix(name);
+  return `${prefix.length >= 2 ? prefix : "Usuario"}${String(Math.floor(Math.random() * 1000000)).padStart(6, "0")}`;
 }
 
 function getCodeNamePrefix(name) {

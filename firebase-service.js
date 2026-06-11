@@ -14,6 +14,27 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 
 class FirebaseService {
+  static normalizeAccessCode(code) {
+    return String(code || "")
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9]/g, "")
+      .toLowerCase();
+  }
+
+  static getEmailFromAccessCode(code) {
+    return `${this.normalizeAccessCode(code)}@users.criptoshishastpv.app`;
+  }
+
+  static loginWithCode(code) {
+    const normalizedCode = this.normalizeAccessCode(code);
+    if (normalizedCode.length < 6) {
+      return Promise.resolve({ success: false, error: "Código incorrecto" });
+    }
+    return this.loginWithEmail(this.getEmailFromAccessCode(code), normalizedCode);
+  }
+
   static async loginWithEmail(email, password) {
     try {
       const result = await auth.signInWithEmailAndPassword(email, password);
@@ -38,6 +59,27 @@ class FirebaseService {
 
   static onAuthStateChanged(callback) {
     return auth.onAuthStateChanged(callback);
+  }
+
+  static async createUserWithCode(code) {
+    const normalizedCode = this.normalizeAccessCode(code);
+    const secondaryAppName = `user-creator-${Date.now()}`;
+    const secondaryApp = firebase.initializeApp(firebaseConfig, secondaryAppName);
+    const secondaryAuth = secondaryApp.auth();
+
+    try {
+      const result = await secondaryAuth.createUserWithEmailAndPassword(
+        this.getEmailFromAccessCode(code),
+        normalizedCode,
+      );
+      const uid = result.user.uid;
+      await secondaryAuth.signOut();
+      return { success: true, uid };
+    } catch (error) {
+      return { success: false, error: error.code || error.message };
+    } finally {
+      await secondaryApp.delete();
+    }
   }
 
   static async saveDocument(collectionName, id, data) {
@@ -66,6 +108,11 @@ class FirebaseService {
 
   static saveUser(userId, userData) {
     return this.saveDocument("users", userId, userData);
+  }
+
+  static async getUser(userId) {
+    const doc = await db.collection("users").doc(userId).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } : null;
   }
 
   static getAllUsers() {

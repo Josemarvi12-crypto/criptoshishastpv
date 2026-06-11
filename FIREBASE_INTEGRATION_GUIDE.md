@@ -1,44 +1,47 @@
-# Firebase: estado y puesta en producción
+# Firebase: configuración de producción
 
 ## Estado actual
 
-La aplicación ya incluye:
+Configurado el 12 de junio de 2026:
 
-- SDK Firebase Compat 10.7.0 cargado correctamente.
-- Persistencia separada de `orders`, `users`, `timeEntries` y `config`.
-- Escuchas `onSnapshot` para actualización en tiempo real.
-- Caché local en `localStorage`.
-- Migración inicial que mezcla datos locales no subidos con los documentos remotos.
-- Borrado remoto de pedidos, usuarios y fichajes.
+- Cloud Firestore en la región europea `eur3`.
+- Edición Standard gratuita y protección contra borrado activada.
+- Firebase Authentication con correo y contraseña.
+- Inicio de sesión mediante un único código para cada trabajador.
+- Perfiles vinculados al `uid` de Firebase.
+- Reglas que bloquean cualquier acceso sin una cuenta activa.
+- Sincronización en tiempo real de pedidos, usuarios, fichajes y configuración.
+- Caché local para tolerar cortes temporales de conexión.
 
-La sincronización solo se inicia cuando existe una sesión válida de Firebase Auth.
+## Usuarios iniciales
 
-## Bloqueo detectado el 11 de junio de 2026
+- Gerente: código entregado al propietario.
+- Vendedor: código entregado al propietario.
 
-- Firestore rechaza las peticiones sin autenticar con HTTP 403.
-- La cuenta de ejemplo `manager@demo.com` documentada anteriormente no inicia sesión.
-- El login por código de la interfaz es un control local y no equivale a Firebase Auth.
+Los códigos son contraseñas privadas. No se guardan en Firestore ni se incluyen en el
+código fuente publicado.
 
-No abras Firestore con reglas `allow read, write: if true`. Eso expondría pedidos,
-usuarios, códigos de acceso y fichajes.
+## Colecciones
 
-## Configuración necesaria
+- `users/{uid}`: nombre, rol, estado y fecha de creación.
+- `orders/{orderId}`: pedidos.
+- `timeEntries/{entryId}`: fichajes.
+- `config/app-state`: centros, catálogo, stock y ajustes.
 
-1. Activa un proveedor en Firebase Authentication.
-2. Crea cuentas reales para las personas que usarán el TPV.
-3. Sustituye el login local por Firebase Auth y vincula cada perfil con `auth.uid`.
-4. Publica reglas de Firestore que comprueben `request.auth.uid` y el rol del perfil.
-5. Elimina los usuarios y códigos de demostración de `defaults` después de migrar los
-   datos existentes.
-6. Prueba con dos navegadores: crear, cobrar, editar y borrar un pedido; abrir y cerrar
-   un fichaje; modificar stock; perder y recuperar la conexión.
+## Gestión de usuarios
 
-## Modelo recomendado
+Un gerente puede crear trabajadores desde Ajustes. La aplicación genera el código,
+crea la cuenta de Firebase y muestra el código una sola vez. Si se desactiva o elimina
+el perfil, esa cuenta deja de tener acceso a los datos aunque conserve sus credenciales.
 
-- `users/{uid}`: nombre, rol, activo y centros permitidos. Nunca contraseñas.
-- `orders/{orderId}`: pedido completo y `createdByUid`.
-- `timeEntries/{entryId}`: fichaje y `userId`.
-- `config/app-state`: centros, catálogo y ajustes no sensibles.
+## Verificaciones realizadas
 
-La creación de usuarios y la asignación del rol de gerente deben hacerse con Firebase
-Admin SDK en una función o API protegida, no desde JavaScript público del navegador.
+- Login real de gerente.
+- Login real de vendedor con navegación restringida.
+- Lectura y escritura protegidas por reglas.
+- Pedido temporal recibido y eliminado en tiempo real entre dos sesiones.
+- Acceso anónimo rechazado.
+
+Como mejora futura, la creación y eliminación definitiva de cuentas puede moverse a
+una función administrativa de servidor. El acceso actual a los datos ya exige un
+perfil activo creado por un gerente.
