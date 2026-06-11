@@ -76,6 +76,46 @@ let quickPaymentMethod = "";
 let authEventsBound = false;
 let appEventsBound = false;
 
+// ===== SINCRONIZACIÓN CON FIRESTORE =====
+// Sincronizar datos de Firestore cuando la app esté lista
+async function syncFirestoreData() {
+  if (!window.FirebaseService) {
+    console.log('Firebase no disponible, usando datos locales');
+    return;
+  }
+  
+  try {
+    // Sincronizar órdenes desde Firestore
+    const firestoreOrders = await FirebaseService.getAllOrders();
+    if (firestoreOrders.length > 0) {
+      // Mezclar órdenes: mantener las locales nuevas, actualizar las que están en Firestore
+      const localOrderIds = state.orders.map(o => o.id);
+      const newOrders = firestoreOrders.filter(fo => !localOrderIds.includes(fo.id));
+      state.orders = [...state.orders, ...newOrders];
+      saveState();
+      console.log('✓ Órdenes sincronizadas desde Firestore');
+    }
+    
+    // Sincronizar configuración
+    const config = await FirebaseService.getConfig('app-state');
+    if (config && config.locations) {
+      state.locations = config.locations;
+      state.locationSettings = config.locationSettings;
+      state.flavors = config.flavors;
+      state.vapers = config.vapers;
+      saveState();
+      console.log('✓ Configuración sincronizada desde Firestore');
+    }
+  } catch (error) {
+    console.log('Sincronización con Firestore no disponible (offline o sin configurar)');
+  }
+}
+
+// Sincronizar cuando la app esté lista
+setTimeout(() => syncFirestoreData(), 2000);
+let authEventsBound = false;
+let appEventsBound = false;
+
 const elements = {
   loginScreen: document.querySelector("#loginScreen"),
   loginForm: document.querySelector("#loginForm"),
@@ -707,7 +747,29 @@ function normalizeUsers(users = []) {
 }
 
 function saveState() {
+  // Guardar en localStorage (local)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  
+  // Guardar en Firestore (nube) de forma asincrónica
+  if (window.FirebaseService) {
+    // Guardar órdenes
+    state.orders.forEach(order => {
+      FirebaseService.saveOrder(order.id, order).catch(err => {
+        console.log('No se pudo guardar orden en Firebase (sin conexión):', err);
+      });
+    });
+    
+    // Guardar configuración
+    FirebaseService.saveConfig('app-state', {
+      locations: state.locations,
+      locationSettings: state.locationSettings,
+      flavors: state.flavors,
+      vapers: state.vapers,
+      lastSync: new Date().toISOString()
+    }).catch(err => {
+      console.log('No se pudo guardar config en Firebase (sin conexión):', err);
+    });
+  }
 }
 
 function renderAll() {
