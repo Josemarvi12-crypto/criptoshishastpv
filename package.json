@@ -1,0 +1,16 @@
+{
+  "name": "criptoshishas-tpv",
+  "version": "2.0.0",
+  "description": "Sistema TPV para Criptoshishas",
+  "main": "servidor.js",
+  "scripts": {
+    "start": "node servidor.js",
+    "dev": "node servidor.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

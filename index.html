@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Criptoshishas TPV</title>
+    <link rel="stylesheet" href="styles.css?v=20260610l" />
+  </head>
+  <body>
+    <!-- Login Screen -->
+    <div class="login-screen" id="loginScreen">
+      <div class="login-container">
+        <div class="login-card">
+          <div class="login-header">
+            <img class="login-logo" src="assets/logo-criptoshishas.jpeg" alt="Criptoshishas" />
+            <h1>Criptoshishas</h1>
+            <p>Sistema de Gestión de Pedidos</p>
+          </div>
+          <form id="loginForm">
+            <label>
+              Código
+              <input id="loginPassword" type="text" placeholder="Gerente1234" required />
+            </label>
+            <div id="loginError" class="login-error"></div>
+            <button class="primary-btn" type="submit">Iniciar sesión</button>
+          </form>
+          <div class="login-footer">
+            <p>Demo gerente: Gerente1234</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="app-shell" id="appShell" style="display: none;">
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <div class="brand">
+          <img class="brand-logo" src="assets/logo-criptoshishas.jpeg" alt="Criptoshishas" />
+          <div>
+            <strong>Criptoshishas</strong>
+            <small>TPV de pedidos</small>
+          </div>
+        </div>
+          <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Cerrar menú" aria-expanded="true" title="Abrir o cerrar menú">&#9776;</button>
+        </div>
+
+        <div class="user-info" id="userInfo">
+          <p class="eyebrow">Usuario actual</p>
+          <p id="currentUserName" style="margin-bottom: 8px; font-weight: 700;"></p>
+          <span id="currentUserRole" class="role-badge"></span>
+          <button class="secondary-btn" id="logoutBtn" type="button" style="margin-top: 12px; width: 100%;">Cerrar sesión</button>
+        </div>
+
+        <nav class="nav-tabs" aria-label="Secciones">
+          <button class="nav-tab active" data-view="pos" type="button">TPV</button>
+          <button class="nav-tab" data-view="history" type="button">Historial</button>
+          <button class="nav-tab" data-view="stats" type="button">Resumen</button>
+          <button class="nav-tab" data-view="timeclock" type="button">Fichaje</button>
+          <button class="nav-tab" data-view="stock" type="button">Stock</button>
+          <button class="nav-tab" data-view="settings" type="button">Ajustes</button>
+        </nav>
+
+        <section class="side-panel">
+          <p class="eyebrow">Sesión activa</p>
+          <label>
+            Centro
+            <select id="locationSelect"></select>
+          </label>
+        </section>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="todayLabel"></p>
+            <h1 id="viewTitle">TPV</h1>
+          </div>
+          <div class="quick-stats">
+            <div>
+              <span id="todayOpenOrders">0</span>
+              <small>en preparación</small>
+            </div>
+            <div>
+              <span id="todayRevenue">0,00 EUR</span>
+              <small>facturación de hoy</small>
+              <p class="revenue-breakdown">
+                <small>Tarjeta <b id="todayCardRevenue">0,00 EUR</b></small>
+                <small>Efectivo <b id="todayCashRevenue">0,00 EUR</b></small>
+              </p>
+            </div>
+            <div class="quick-stat-vape">
+              <span id="todayVapeRevenue">0,00 EUR</span>
+              <small>facturación vaper</small>
+            </div>
+            <div class="quick-stat-hookah">
+              <span id="todayHookahRevenue">0,00 EUR</span>
+              <small>facturación cachimba</small>
+            </div>
+          </div>
+        </header>
+
+        <section class="view active" id="posView" aria-labelledby="viewTitle">
+          <div class="pos-layout">
+            <section class="ticket-panel">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Nueva orden</p>
+                  <h2 id="orderTitle">Pedido de cachimba</h2>
+                </div>
+              </div>
+
+              <form id="orderForm">
+                <div class="product-switch" aria-label="Tipo de producto">
+                  <button class="active" type="button" data-product-type="hookah">Cachimba</button>
+                  <button type="button" data-product-type="vape">Vaper</button>
+                </div>
+
+                <div id="hookahFields">
+                  <label id="customerField">
+                    Mesa o cliente
+                    <input id="customerInput" type="text" list="customerOptions" placeholder="Ej. Mesa 4 / Juan" />
+                  </label>
+                  <datalist id="customerOptions"></datalist>
+
+
+                  <label id="priceField">
+                    <span class="price-label">
+                      Precio
+                      <small id="recommendedPriceLabel">Recomendado: 10,00 EUR</small>
+                    </span>
+                    <div class="price-options" id="quickPriceButtons">
+                      <button type="button" data-price-option="20">20 EUR</button>
+                      <button type="button" data-price-option="15">15 EUR</button>
+                      <button type="button" data-price-option="10">10 EUR</button>
+                      <button type="button" data-price-option="other">Otro</button>
+                    </div>
+                    <div class="money-input other-price" id="otherPriceWrap">
+                      <input id="priceInput" type="number" min="0" step="0.5" placeholder="12.00" required />
+                      <span>EUR</span>
+                    </div>
+                  </label>
+
+                  <label>
+                    Sabores y porcentaje
+                    <div class="flavor-picker">
+                      <select id="flavorInput"><option value="">Selecciona un sabor</option></select>
+                      <button class="secondary-btn" id="addFlavorBtn" type="button">Añadir sabor</button>
+                    </div>
+                  </label>
+                  <div class="selected-flavors" id="selectedFlavors">
+                    <span class="empty-hint">Sin sabores seleccionados.</span>
+                  </div>
+                  <div class="flavor-total" id="flavorTotal">Total mezcla: 0%</div>
+                  <button class="secondary-btn" id="addHookahItemBtn" type="button">Añadir cachimba</button>
+                  <div class="hookah-items" id="hookahItems">
+                    <span class="empty-hint">Sin mezclas añadidas. Selecciona sabores y pulsa el botón para añadir.</span>
+                  </div>
+                </div>
+
+                <div id="vapeFields" hidden>
+                  <label>
+                    Vaper
+                    <select id="vapeProductSelect"></select>
+                  </label>
+
+                  <button class="secondary-btn" id="addVaperItemBtn" type="button">Añadir vaper</button>
+                  <div class="vaper-items" id="vaperItems">
+                    <span class="empty-hint">Sin vapers añadidos. Selecciona un vaper y pulsa el botón para añadir.</span>
+                  </div>
+                  <label>
+                    Cobro
+                    <div class="payment-options">
+                      <button class="selected" type="button" data-payment-option="cash">Efectivo</button>
+                      <button type="button" data-payment-option="card">Tarjeta</button>
+                    </div>
+                  </label>
+                </div>
+
+
+
+                <label>
+                  Notas
+                  <textarea id="notesInput" rows="3" placeholder="Cambio de carbon, sin hielo, observaciones..."></textarea>
+                </label>
+
+                <button class="primary-btn" id="saveOrderBtn" type="submit">Poner en preparación</button>
+              </form>
+
+              <div class="last-sale" id="lastOrderBox">
+                <p class="eyebrow">Último movimiento</p>
+                <p>Todavía no hay pedidos registrados.</p>
+              </div>
+            </section>
+
+            <section class="orders-section">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Servicio actual</p>
+                  <h2>Pedidos de hoy</h2>
+                </div>
+              </div>
+
+              <div class="order-columns">
+                <div>
+                  <header class="column-title">
+                    <span>Preparación</span>
+                    <strong id="preparingCount">0</strong>
+                  </header>
+                  <div class="order-list" id="preparingOrders"></div>
+                </div>
+
+                <div>
+                  <header class="column-title">
+                    <span>Cobradas</span>
+                    <strong id="paidCount">0</strong>
+                  </header>
+                  <div class="order-list" id="paidOrders"></div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="historyView" aria-labelledby="viewTitle">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Histórico</p>
+              <h2>Pedidos registrados</h2>
+            </div>
+            <div class="filters history-filters">
+              <label class="filter-field">
+                Desde
+                <input id="historyDateFrom" type="date" />
+              </label>
+              <label class="filter-field">
+                Hasta
+                <input id="historyDateTo" type="date" />
+              </label>
+              <select id="historyLocation" aria-label="Centro"></select>
+              <select id="historyCategory" aria-label="Categoría">
+                <option value="all">Vaper y cachimba</option>
+                <option value="vape">Vaper</option>
+                <option value="hookah">Cachimba</option>
+              </select>
+              <select id="historyPayment" aria-label="Forma de pago">
+                <option value="all">Tarjeta y efectivo</option>
+                <option value="card">Tarjeta</option>
+                <option value="cash">Efectivo</option>
+              </select>
+              <select id="historyStatus" aria-label="Estado">
+                <option value="all">Todos los estados</option>
+                <option value="preparation">Preparación</option>
+                <option value="paid">Cobradas</option>
+              </select>
+              <button class="secondary-btn" id="exportBtn" type="button">Exportar Excel</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Hora</th>
+                  <th>Centro</th>
+                  <th>Trabajador</th>
+                  <th>Mesa/cliente</th>
+                  <th>Categoría</th>
+                  <th>Unidades</th>
+                  <th>Pedido</th>
+                  <th>Estado</th>
+                  <th>Pago</th>
+                  <th>Precio</th>
+                  <th>Comisión</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="historyTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="view dashboard-view" id="statsView" aria-labelledby="viewTitle">
+          <section class="dashboard-toolbar">
+            <div class="dashboard-toolbar-head">
+              <div><p class="eyebrow">Análisis de ventas</p><h2>Dashboard</h2></div>
+              <div class="dashboard-presets" aria-label="Periodos rápidos">
+                <button type="button" data-dashboard-range="today">Hoy</button>
+                <button type="button" data-dashboard-range="7">7 días</button>
+                <button type="button" data-dashboard-range="month">Este mes</button>
+              </div>
+            </div>
+            <div class="dashboard-filters">
+              <label>Desde<input id="dashboardDateFrom" type="date" /></label>
+              <label>Hasta<input id="dashboardDateTo" type="date" /></label>
+              <label>Centro<select id="dashboardLocation"></select></label>
+              <label>Trabajador<select id="dashboardSeller"></select></label>
+              <label>Categoría<select id="dashboardCategory"><option value="all">Todas</option><option value="vape">Vaper</option><option value="hookah">Cachimba</option></select></label>
+              <label>Pago<select id="dashboardPayment"><option value="all">Todos</option><option value="card">Tarjeta</option><option value="cash">Efectivo</option></select></label>
+            </div>
+          </section>
+
+          <div class="dashboard-kpis">
+            <article><p>Facturación</p><strong id="dashboardRevenue">0,00 EUR</strong><span id="dashboardRevenueMeta">0 pedidos cobrados</span></article>
+            <article><p>Unidades vendidas</p><strong id="dashboardUnits">0</strong><span id="dashboardUnitsMeta">0 vapers · 0 cachimbas</span></article>
+            <article><p>Ticket medio</p><strong id="dashboardAverageTicket">0,00 EUR</strong><span>por pedido cobrado</span></article>
+            <article><p>Tarjeta</p><strong id="dashboardCardRevenue">0,00 EUR</strong><span id="dashboardCardMeta">0 cobros</span></article>
+            <article><p>Efectivo</p><strong id="dashboardCashRevenue">0,00 EUR</strong><span id="dashboardCashMeta">0 cobros</span></article>
+            <article><p>En preparación</p><strong id="dashboardPending">0</strong><span id="dashboardPendingMeta">0,00 EUR pendientes</span></article>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="dashboard-panel dashboard-trend-panel">
+              <div class="dashboard-panel-head"><div><p class="eyebrow">Evolución</p><h2>Facturación por periodo</h2></div><span id="dashboardPeriodLabel"></span></div>
+              <div class="trend-chart" id="dashboardTrend"></div>
+            </section>
+            <section class="dashboard-panel">
+              <div class="dashboard-panel-head"><div><p class="eyebrow">Categorías</p><h2>Vaper y cachimba</h2></div></div>
+              <div class="donut-layout"><div class="donut-chart" id="dashboardCategoryDonut"><div><strong id="dashboardCategoryTotal">0,00 EUR</strong><span>Total</span></div></div><div class="chart-legend" id="dashboardCategoryLegend"></div></div>
+            </section>
+            <section class="dashboard-panel">
+              <div class="dashboard-panel-head"><div><p class="eyebrow">Cobros</p><h2>Métodos de pago</h2></div></div>
+              <div class="donut-layout"><div class="donut-chart" id="dashboardPaymentDonut"><div><strong id="dashboardPaymentTotal">0,00 EUR</strong><span>Total</span></div></div><div class="chart-legend" id="dashboardPaymentLegend"></div></div>
+            </section>
+            <section class="dashboard-panel"><div class="dashboard-panel-head"><div><p class="eyebrow">Centros</p><h2>Facturación por centro</h2></div></div><div id="locationReport" class="analytics-bars"></div></section>
+            <section class="dashboard-panel"><div class="dashboard-panel-head"><div><p class="eyebrow">Equipo</p><h2>Facturación por trabajador</h2></div></div><div id="sellerReport" class="analytics-bars"></div></section>
+            <section class="dashboard-panel dashboard-table-panel dashboard-wide">
+              <div class="dashboard-panel-head"><div><p class="eyebrow">Desglose</p><h2>Rendimiento por categoría</h2></div></div>
+              <div class="dashboard-table-wrap"><table class="dashboard-table"><thead><tr><th>Categoría</th><th>Pedidos</th><th>Unidades</th><th>Facturación</th><th>Ticket medio</th><th>Peso</th></tr></thead><tbody id="dashboardCategoryTable"></tbody></table></div>
+            </section>
+            <section class="dashboard-panel"><div class="dashboard-panel-head"><div><p class="eyebrow">Demanda</p><h2>Productos y sabores</h2></div></div><div id="dashboardProductRanking" class="analytics-bars"></div></section>
+            <section class="dashboard-panel dashboard-table-panel">
+              <div class="dashboard-panel-head"><div><p class="eyebrow">Clientes</p><h2>Principales clientes</h2></div></div>
+              <div class="dashboard-table-wrap"><table class="dashboard-table"><thead><tr><th>Cliente</th><th>Pedidos</th><th>Unidades</th><th>Facturación</th><th>Último pedido</th></tr></thead><tbody id="customerReport"></tbody></table></div>
+            </section>
+          </div>
+        </section>
+        <section class="view" id="timeclockView" aria-labelledby="viewTitle">
+          <div class="timeclock-layout">
+            <section class="clock-panel">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Jornada</p>
+                  <h2>Fichaje del trabajador</h2>
+                </div>
+              </div>
+
+              <div class="clock-status" id="clockStatus"></div>
+
+              <div class="clock-actions">
+                <button class="primary-btn" id="clockInBtn" type="button">Abrir fichaje</button>
+                <button class="secondary-btn" id="clockOutBtn" type="button">Cerrar fichaje</button>
+              </div>
+
+              <form class="manual-hours-form" id="manualHoursForm">
+                <div class="section-head compact-head">
+                  <div>
+                    <h2>Añadir sesión olvidada</h2>
+                  </div>
+                </div>
+                <label>
+                  Trabajador
+                  <select id="manualUserSelect" required></select>
+                </label>
+                <label>
+                  Centro de trabajo
+                  <select id="manualLocationSelect" required></select>
+                </label>
+                <label>
+                  Día trabajado
+                  <input id="manualHoursDate" type="date" required />
+                </label>
+                <div class="hours-grid">
+                  <label>
+                    Hora de entrada
+                    <input id="manualStartTime" type="time" value="09:00" required />
+                  </label>
+                  <label>
+                    Hora de salida
+                    <input id="manualEndTime" type="time" value="17:00" required />
+                  </label>
+                </div>
+                <label>
+                  Nota
+                  <input id="manualHoursNote" type="text" placeholder="Motivo o aclaracion opcional" />
+                </label>
+                <button class="secondary-btn" type="submit">Guardar sesión</button>
+              </form>
+            </section>
+
+            <div class="timeclock-modules">
+              <section class="clock-history" id="timeclockHistoryPanel">
+                <div class="section-head">
+                  <div>
+                    <p class="eyebrow">Control horario</p>
+                    <h2>Balances y fichajes diarios</h2>
+                  </div>
+                </div>
+
+                <div class="period-panels">
+                  <section id="timeclockWeekPanel">
+                    <div class="section-head compact-head">
+                      <div>
+                        <p class="eyebrow">Semana</p>
+                        <h2>Balance semanal</h2>
+                      </div>
+                      <input id="timeclockWeek" type="week" />
+                    </div>
+                    <div class="time-summary" id="timeclockWeekSummary"></div>
+                  </section>
+
+                  <section id="timeclockMonthPanel">
+                    <div class="section-head compact-head">
+                      <div>
+                        <p class="eyebrow">Mes</p>
+                        <h2>Balance mensual</h2>
+                      </div>
+                      <input id="timeclockMonth" type="month" />
+                    </div>
+                    <div class="time-summary" id="timeclockMonthSummary"></div>
+                  </section>
+                </div>
+
+                <div class="section-head daily-clock-head" id="timeclockDayHeader">
+                  <div>
+                    <p class="eyebrow">Detalle diario</p>
+                    <h2>Fichajes del dia</h2>
+                  </div>
+                  <input id="timeclockDate" type="date" />
+                </div>
+                <div class="time-summary" id="timeclockSummary"></div>
+
+                <div class="table-wrap" id="timeclockTableWrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Trabajador</th>
+                        <th>Centro</th>
+                        <th>Entrada</th>
+                        <th>Salida</th>
+                        <th>Total</th>
+                        <th>Tipo</th>
+                        <th id="timeclockActionsHeader">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody id="timeclockTable"></tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section class="employee-timesheet" id="employeeTimesheetPanel">
+                <div class="section-head">
+                  <div>
+                    <p class="eyebrow">Comprobacion y exportacion</p>
+                    <h2>Hoja de fichaje de usuarios</h2>
+                  </div>
+                  <form class="timesheet-filters" id="timesheetFilterForm">
+                    <label>
+                      Usuario
+                      <select id="timesheetUserSelect" required></select>
+                    </label>
+                    <label>
+                      Mes
+                      <input id="timesheetMonth" type="month" required />
+                    </label>
+                    <button class="primary-btn" type="submit">Consultar</button>
+                    <button class="secondary-btn" id="exportTimesheetBtn" type="button" disabled>Exportar PDF</button>
+                  </form>
+                </div>
+                <div class="timesheet-overview" id="timesheetOverview"></div>
+                <div class="table-wrap">
+                  <table class="timesheet-table">
+                    <thead>
+                      <tr>
+                        <th>Día</th>
+                        <th>Entrada</th>
+                        <th>Salida</th>
+                        <th>Centro</th>
+                        <th>Sesiones</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody id="timesheetTable"></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="settingsView" aria-labelledby="viewTitle">
+          <div class="settings-layout">
+            <section>
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Configuración</p>
+                  <h2>Centros de trabajo</h2>
+                </div>
+              </div>
+              <form class="inline-form" id="locationForm">
+                <input id="newLocationInput" type="text" placeholder="Nuevo centro" required />
+                <button class="secondary-btn" type="submit">Añadir</button>
+              </form>
+              <div class="location-list" id="locationList"></div>
+            </section>
+
+            <section>
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Sistema</p>
+                  <h2>Mantenimiento</h2>
+                </div>
+              </div>
+              <div class="danger-zone">
+                <button class="danger-btn" id="clearDemoBtn" type="button">Borrar pedidos guardados</button>
+              </div>
+            </section>
+
+            <section class="settings-users" id="userManagementSection" style="display: none;">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Administración</p>
+                  <h2>Gestión de usuarios</h2>
+                </div>
+              </div>
+              <form class="inline-form" id="createUserForm">
+                <input id="newUserName" type="text" placeholder="Nombre" required />
+                <select id="newUserRole" required>
+                  <option value="employee">Empleado</option>
+                  <option value="manager">Gerente</option>
+                </select>
+                <button class="secondary-btn" type="submit">Crear usuario</button>
+              </form>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Nombre</th>
+                      <th>Perfil</th>
+                      <th>Código</th>
+                      <th>Estado</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="usersTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="stockView" aria-labelledby="viewTitle">
+          <div class="section-head stock-view-head">
+            <div>
+              <p class="eyebrow">Inventario y catalogo</p>
+              <h2>Productos</h2>
+            </div>
+            <button class="primary-btn" id="downloadMenuBtn" type="button">Descargar carta PDF</button>
+          </div>
+
+          <div class="stock-layout">
+            <section>
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Inventario</p>
+                  <h2>Vapers</h2>
+                </div>
+              </div>
+              <form class="inventory-form" id="vaperForm">
+                <input id="newVaperNameInput" type="text" placeholder="Nombre o sabor del vaper" required />
+                <input id="newVaperStockInput" type="number" min="0" step="1" placeholder="Stock" required />
+                <button class="secondary-btn" type="submit">Añadir</button>
+              </form>
+              <div class="stock-list" id="vaperStockList"></div>
+            </section>
+
+            <section>
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Catalogo</p>
+                  <h2>Sabores de cachimba</h2>
+                </div>
+              </div>
+              <form class="stock-flavor-form" id="flavorForm">
+                <input id="newFlavorInput" type="text" placeholder="Nuevo sabor de cachimba" required />
+                <button class="secondary-btn" type="submit">Añadir</button>
+              </form>
+              <div class="pill-list stock-flavor-list" id="flavorList"></div>
+            </section>
+          </div>
+        </section>      </main>
+    </div>
+
+    <script src="app.js?v=20260610u"></script>
+  </body>
+</html>
