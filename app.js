@@ -1647,7 +1647,7 @@ function getFilteredHistory() {
   return getOrdersVisibleToCurrentUser()
     .reverse()
     .filter((order) => {
-      const orderDate = order.createdAt.slice(0, 10);
+      const orderDate = getLocalDateValue(order.createdAt);
       return (!dateFrom || orderDate >= dateFrom) && (!dateTo || orderDate <= dateTo);
     })
     .filter((order) => selectedLocation === "Todos los centros" || order.location === selectedLocation)
@@ -1660,7 +1660,7 @@ function canModifyOrder(order) {
   return (
     isEmployee() &&
     order.location === state.session.location &&
-    order.createdAt.slice(0, 10) === toDateInputValue(new Date())
+    getLocalDateValue(order.createdAt) === toDateInputValue(new Date())
   );
 }
 
@@ -2398,7 +2398,7 @@ function getDashboardFilteredOrders() {
 
   return getOrdersVisibleToCurrentUser()
     .filter((order) => {
-      const orderDate = order.createdAt.slice(0, 10);
+      const orderDate = getLocalDateValue(order.createdAt);
       return (!dateFrom || orderDate >= dateFrom) && (!dateTo || orderDate <= dateTo);
     })
     .filter((order) => location === "Todos los centros" || order.location === location)
@@ -2491,15 +2491,17 @@ function renderDashboardTrend(orders) {
 }
 
 function buildDashboardSeries(orders) {
-  const fromValue = elements.dashboardDateFrom.value || orders.map((order) => order.createdAt.slice(0, 10)).sort()[0];
-  const toValue = elements.dashboardDateTo.value || orders.map((order) => order.createdAt.slice(0, 10)).sort().at(-1);
+  const orderDates = orders.map((order) => getLocalDateValue(order.createdAt)).filter(Boolean).sort();
+  const fromValue = elements.dashboardDateFrom.value || orderDates[0];
+  const toValue = elements.dashboardDateTo.value || orderDates.at(-1);
   if (!fromValue || !toValue || fromValue > toValue) return [];
   const from = new Date(`${fromValue}T12:00:00`);
   const to = new Date(`${toValue}T12:00:00`);
   const dayCount = Math.floor((to - from) / 86400000) + 1;
   const monthly = dayCount > 45;
   const grouped = orders.reduce((acc, order) => {
-    const key = monthly ? order.createdAt.slice(0, 7) : order.createdAt.slice(0, 10);
+    const localDate = getLocalDateValue(order.createdAt);
+    const key = monthly ? localDate.slice(0, 7) : localDate;
     if (!acc[key]) acc[key] = { value: 0, orders: 0 };
     acc[key].value += Number(order.price || 0);
     acc[key].orders += 1;
@@ -3038,7 +3040,7 @@ function exportExcel() {
     .map(
       (order, index) => `
         <tr class="${index % 2 === 0 ? "even" : "odd"}">
-          <td class="date">${escapeHtml(order.createdAt.slice(0, 10))}</td>
+          <td class="date">${escapeHtml(getLocalDateValue(order.createdAt))}</td>
           <td>${escapeHtml(formatTime(order.createdAt))}</td>
           <td>${escapeHtml(order.location)}</td>
           <td>${escapeHtml(order.seller)}</td>
@@ -3121,7 +3123,7 @@ function getTimeEntriesVisibleToCurrentUser() {
 
 function getOrdersForDate(date) {
   const value = toDateInputValue(date);
-  return state.orders.filter((order) => order.createdAt.slice(0, 10) === value);
+  return state.orders.filter((order) => getLocalDateValue(order.createdAt) === value);
 }
 
 function getKnownCustomers() {
@@ -3513,6 +3515,11 @@ function formatTime(value) {
 function toDateInputValue(date) {
   const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return offsetDate.toISOString().slice(0, 10);
+}
+
+function getLocalDateValue(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : toDateInputValue(date);
 }
 
 function csvCell(value) {

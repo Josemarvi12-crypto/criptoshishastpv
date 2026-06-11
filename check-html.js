@@ -16,8 +16,13 @@ if (!html.includes("firebase-app-compat.js") || !html.includes("firebase-firesto
   process.exit(1);
 }
 
-if (!html.includes("app.js?v=20260612b") || !html.includes("firebase-service.js?v=20260612b")) {
+if (!html.includes("app.js?v=20260612c") || !html.includes("firebase-service.js?v=20260612c")) {
   console.error("Las versiones de caché de los scripts no están actualizadas.");
+  process.exit(1);
+}
+
+if (/createdAt\.slice\(0,\s*(7|10)\)/.test(app)) {
+  console.error("Las fechas de pedidos deben convertirse a fecha local, no cortarse en UTC.");
   process.exit(1);
 }
 
